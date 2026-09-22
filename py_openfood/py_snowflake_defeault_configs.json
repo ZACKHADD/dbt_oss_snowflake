@@ -1,0 +1,10 @@
+{
+    "user": "DATAENG_1",
+    "account": "OMOZSHQ-PA26102",
+    "warehouse": "JAFFLE_DEV_LOADING_WH",
+    "role": "JAFFLE_RW_DEVEL_DEV",
+    "database": "JAFFLE_RAW_DEV",
+    "schema": "JAFFLE_SHOP",
+    "stage": "SOURCE_DATA_DEV",
+    "folder": "OpenFoodData"
+}

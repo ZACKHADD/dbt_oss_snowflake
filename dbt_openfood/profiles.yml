@@ -1,0 +1,51 @@
+snow_openfood:
+  outputs:
+    dev:
+      account: THCXQBZ-NM69331
+      database: DEV_SOURCES_RAW
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_KEY_PASSPHRASE_D') }}" # environment variable to be set in cicd env also
+      private_key_path: "{{ env_var('SNOWFLAKE_KEY_PATH_D') }}" 
+      role: DEV_SOURCES_DATA_ENGINEER
+      schema: OPENFOOD_API
+      threads: 4
+      type: snowflake
+      user: DATAENG_1
+      warehouse: DEV_SOURCES_LOAD_WH
+
+    rct:
+      account: THCXQBZ-NM69331
+      database: RCT_SOURCES_RAW
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_KEY_PASSPHRASE_D') }}" # environment variable to be set in cicd env also
+      private_key_path: "{{ env_var('SNOWFLAKE_KEY_PATH_D') }}" 
+      role: RCT_OPENFOOD_DBT_SVC
+      schema: OPENFOOD_API
+      threads: 4
+      type: snowflake
+      user: SVC_DBT_RCT
+      warehouse: RCT_SOURCES_LOAD_WH
+
+    ppd:
+      account: THCXQBZ-NM69331
+      database: PPD_SOURCES_RAW
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_KEY_PASSPHRASE_D') }}" # environment variable to be set in cicd env also
+      private_key_path: "{{ env_var('SNOWFLAKE_KEY_PATH_D') }}" 
+      role: PPD_OPENFOOD_DBT_SVC
+      schema: OPENFOOD_API
+      threads: 4
+      type: snowflake
+      user: SVC_DBT_PPD
+      warehouse: PPD_SOURCES_LOAD_WH
+
+    prd:
+      account: THCXQBZ-NM69331
+      database: PRD_SOURCES_RAW
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_KEY_PASSPHRASE_D') }}" # environment variable to be set in cicd env also
+      private_key_path: "{{ env_var('SNOWFLAKE_KEY_PATH_D') }}" 
+      role: PRD_OPENFOOD_DBT_SVC
+      schema: OPENFOOD_API
+      threads: 4
+      type: snowflake
+      user: SVC_DBT_PRD
+      warehouse: PRD_SOURCES_LOAD_WH
+
+  target: dev

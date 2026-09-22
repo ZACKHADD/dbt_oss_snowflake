@@ -1,0 +1,19 @@
+[project]
+name = "dbt-snow-github"
+version = "0.1.0"
+description = "dbt project for openfood on snowflake"
+readme = "README.md"
+authors = [
+    { name = "zakaria", email = "zakariahaddouche5@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "dbt-oss>=2.0,<3.0",
+]
+
+[project.scripts]
+dbt-snow-github = "dbt_snow_github:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
