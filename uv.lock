@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dbt-oss", specifier = ">=2.0,<3.0" }]
+requires-dist = [{ name = "dbt-oss", specifier = "==2.0.5" }]
 
 [[package]]
 name = "mashumaro"

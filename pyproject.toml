@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "dbt-oss>=2.0,<3.0",
+    "dbt-oss==2.0.5",
 ]
 
 [project.scripts]
