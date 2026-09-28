@@ -1,0 +1,52 @@
+name: production-deploy
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy, e.g. v1.7.0 (also used for rollback to an earlier tag)"
+        required: true
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: production-deploy-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-prd:
+    runs-on: ubuntu-latest
+    environment: prd
+    env:
+      DBT_PROJECT_PATH: ${{ vars.DBT_PROJECT_PATH || 'dbt_openfood' }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      SNOWFLAKE_KEY_PASSPHRASE_D: ${{ secrets.SNOWFLAKE_KEY_PASSPHRASE }}
+      MANIFEST_PUSH_TOKEN: ${{ secrets.MANIFEST_PUSH_TOKEN }}
+      ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+      ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+      ARGOCD_VERIFY_REQUIRED: ${{ vars.ARGOCD_VERIFY_REQUIRED }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+      - uses: ./.github/actions/setup
+
+      - name: deploy PRD Snowflake at tag (single workflow run)
+        uses: ./.github/actions/slim-ci
+        with:
+          env: prd
+          target: prd
+          drop-removed: "true"
+
+      - name: bump deploy/prd ref to tag
+        run: bash scripts/bump_manifest.sh "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}" prd
+
+      - name: verify Argo CD sync (airflow-prd)
+        run: bash scripts/verify_argo_sync.sh airflow-prd "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"

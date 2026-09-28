@@ -1,0 +1,39 @@
+name: tag-release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: detect release merge
+        id: detect
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          V=$(printf '%s\n' "$COMMIT_MSG" | grep -oE 'release/v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 | sed 's#release/v##')
+          if [ -n "$V" ]; then
+            echo "version=$V" >> "$GITHUB_OUTPUT"
+          else
+            echo "no release-version merge; skipping tag"
+          fi
+
+      - name: create immutable tag
+        if: steps.detect.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="v${{ steps.detect.outputs.version }}"
+          git tag -a "$V" -m "Release ${V} - validated RCT + PPD + UAT"
+          git push origin "$V"
+          echo "created tag $V"

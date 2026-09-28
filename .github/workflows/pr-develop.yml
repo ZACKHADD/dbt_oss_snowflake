@@ -1,0 +1,109 @@
+name: pr-develop
+
+on:
+  pull_request:
+    branches:
+      - develop
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: pr-develop-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    environment: pr-ci
+    env:
+      DBT_PROJECT_PATH: ${{ vars.DBT_PROJECT_PATH || 'dbt_openfood' }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      SNOWFLAKE_KEY_PASSPHRASE_D: ${{ secrets.SNOWFLAKE_KEY_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup
+
+      - name: derive PR author schema
+        id: author
+        run: |
+          A="${{ github.event.pull_request.user.login }}"
+          A="${A//[^a-zA-Z0-9_]/_}"
+          A_LOW=$(printf '%s' "$A" | tr 'A-Z' 'a-z')
+          echo "developer=$A_LOW" >> "$GITHUB_OUTPUT"
+
+      - name: PR Slim CI into author sandbox (Option C vs dev state)
+        uses: ./.github/actions/slim-ci
+        with:
+          env: developer
+          state-env: dev
+          target: dev_sandbox
+          drop-removed: "false"
+        env:
+          DBT_DEVELOPER_NAME: ${{ steps.author.outputs.developer }}
+
+      - name: dbt test modified nodes
+        run: |
+          cd "$DBT_PROJECT_PATH"
+          if [ -f "$RUNNER_TEMP/dbt-state/manifest.json" ]; then
+            uv run dbt test --target dev_sandbox --select "state:modified+" --defer --state "$RUNNER_TEMP/dbt-state"
+          else
+            uv run dbt test --target dev_sandbox
+          fi
+
+      - name: prepare PR comment
+        id: comment
+        env:
+          DEVELOPER: ${{ steps.author.outputs.developer }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          {
+            echo "BODY<<'EOF'"
+            echo "### dbt CI for \`$DEVELOPER\`"
+            echo ""
+            echo "**Slim CI selection (\`state:modified+\` vs dev state):**"
+            echo '```'
+            if [ -f "$RUNNER_TEMP/selected.txt" ]; then
+              cat "$RUNNER_TEMP/selected.txt"
+            else
+              echo "(no dev state yet — bootstrap full build ran instead)"
+            fi
+            echo '```'
+            echo ""
+            echo "**Compiled source diff (models):**"
+            echo '```diff'
+            git diff "$BASE...$HEAD" -- "$DBT_PROJECT_PATH/models" | head -n 400
+            echo '```'
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: post PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = process.env.BODY;
+            const { owner, repo } = context.repo;
+            const { data } = await github.rest.issues.listComments({
+              owner, repo,
+              issue_number: context.issue.number,
+            });
+            const marker = "### dbt CI for";
+            const prior = data.find(c => c.body && c.body.includes(marker));
+            if (prior) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: prior.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: context.issue.number, body,
+              });
+            }
+        env:
+          BODY: ${{ steps.comment.outputs.BODY }}

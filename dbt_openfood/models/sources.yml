@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: openfood_sources
+    description: "Open Food sources"
+    schema: "{{ env_var('DBT_DEVELOPER_NAME') ~ '_openfood_api' if target.name == 'dev_sandbox' else 'openfood_api' }}"
+    tables:
+      - name: raw_customers
+        description: "Table containing customer information from Open Food." 

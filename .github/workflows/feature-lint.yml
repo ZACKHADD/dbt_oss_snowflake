@@ -1,0 +1,41 @@
+name: feature-lint
+
+on:
+  push:
+    branches-ignore:
+      - develop
+      - main
+      - "release/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feature-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-parse-compile:
+    runs-on: ubuntu-latest
+    env:
+      DBT_PROJECT_PATH: ${{ vars.DBT_PROJECT_PATH || 'dbt_openfood' }}
+      SQLFLUFF_DIALECT: ${{ vars.SQLFLUFF_DIALECT || 'snowflake' }}
+      SNOWFLAKE_KEY_PASSPHRASE_D: ""
+      SNOWFLAKE_KEY_PATH_D: /nonexistent/ci-no-snowflake-key.p8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: sync locked environment
+        run: uv sync --frozen
+
+      - name: SQL lint
+        run: uvx sqlfluff lint "$DBT_PROJECT_PATH/models" --dialect "$SQLFLUFF_DIALECT"
+
+      - name: dbt parse
+        run: cd "$DBT_PROJECT_PATH" && uv run dbt parse --no-partial-parse
+
+      - name: dbt compile
+        run: cd "$DBT_PROJECT_PATH" && uv run dbt compile --target dev --no-partial-parse

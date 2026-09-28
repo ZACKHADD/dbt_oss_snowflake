@@ -1,0 +1,47 @@
+name: dev-deploy
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: dev-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      DBT_PROJECT_PATH: ${{ vars.DBT_PROJECT_PATH || 'dbt_openfood' }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      SNOWFLAKE_KEY_PASSPHRASE_D: ${{ secrets.SNOWFLAKE_KEY_PASSPHRASE }}
+      MANIFEST_PUSH_TOKEN: ${{ secrets.MANIFEST_PUSH_TOKEN }}
+      ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+      ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+      ARGOCD_VERIFY_REQUIRED: ${{ vars.ARGOCD_VERIFY_REQUIRED }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup
+
+      - name: deploy shared dev Snowflake (continuous)
+        uses: ./.github/actions/slim-ci
+        with:
+          env: dev
+          target: dev
+          drop-removed: "true"
+
+      - name: bump deploy/dev ref
+        run: bash scripts/bump_manifest.sh "${{ github.sha }}" dev
+
+      - name: verify Argo CD sync (airflow-dev)
+        run: bash scripts/verify_argo_sync.sh airflow-dev "${{ github.sha }}"

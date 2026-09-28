@@ -1,5 +1,17 @@
 snow_openfood:
   outputs:
+    dev_sandbox:
+      account: THCXQBZ-NM69331
+      database: DEV_SOURCES_RAW
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_KEY_PASSPHRASE_D') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_KEY_PATH_D') }}"
+      role: "DEV_SOURCES_SANDBOX_{{ env_var('DBT_DEVELOPER_NAME') }}"
+      schema: "{{ env_var('DBT_DEVELOPER_NAME') }}_OPENFOOD_API"
+      threads: 4
+      type: snowflake
+      user: "{{ env_var('DBT_DEVELOPER_NAME') }}"
+      warehouse: DEV_SOURCES_LOAD_WH
+
     dev:
       account: THCXQBZ-NM69331
       database: DEV_SOURCES_RAW
@@ -9,7 +21,7 @@ snow_openfood:
       schema: OPENFOOD_API
       threads: 4
       type: snowflake
-      user: DATAENG_1
+      user: SVC_DBT_DEV
       warehouse: DEV_SOURCES_LOAD_WH
 
     rct:
@@ -48,4 +60,4 @@ snow_openfood:
       user: SVC_DBT_PRD
       warehouse: PRD_SOURCES_LOAD_WH
 
-  target: dev
+  target: dev_sandbox

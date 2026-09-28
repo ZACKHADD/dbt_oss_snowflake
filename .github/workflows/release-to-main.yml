@@ -1,0 +1,63 @@
+name: release-to-main
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. v1.7.0"
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-release-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: open release PR to main
+        uses: actions/github-script@v7
+        env:
+          VERSION: ${{ inputs.version }}
+          UAT_REVIEWERS: ${{ vars.UAT_REVIEWERS }}
+        with:
+          script: |
+            const v = process.env.VERSION;
+            const br = `release/${v}`;
+            const { owner, repo } = context.repo;
+
+            const existing = await github.rest.pulls.list({ owner, repo, head: `${owner}:${br}`, state: "open" });
+            if (existing.data.length) {
+              console.log("Release PR already open:", existing.data[0].number);
+              return;
+            }
+
+            const body = [
+              `## Release ${v} -> main`,
+              "",
+              `- **Source branch:** \`${br}\` (release cut snapshot + any RCT/PPD triage reverts)`,
+              "- **Gate this PR**: UAT / business-owner group as required reviewers (structurally distinct from the QA gate).",
+              "- QA sign-off was recorded during RCT; UAT sign-off is captured here and on the `ppd-approval` environment.",
+              "- The immutable tag is created only AFTER this merge (see `tag-release` workflow).",
+              "",
+              "> Release Manager: only open/approve when RCT + PPD + UAT are all green.",
+            ].join("\n");
+
+            const pr = await github.rest.pulls.create({
+              owner, repo, base: "main", head: br, title: `Release ${v} -> main`, body,
+            });
+            await github.rest.issues.addLabels({
+              owner, repo, issue_number: pr.data.number, labels: ["release"],
+            });
+
+            const reviewers = (process.env.UAT_REVIEWERS || "").split(",").map(s => s.trim()).filter(Boolean);
+            if (reviewers.length) {
+              await github.rest.pulls.requestReviewers({
+                owner, repo, pull_number: pr.data.number, reviewers,
+              });
+            }
+            return pr.data.number;

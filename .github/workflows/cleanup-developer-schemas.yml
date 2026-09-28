@@ -1,0 +1,31 @@
+name: cleanup-developer-schemas
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cleanup-developer-schemas
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      DBT_PROJECT_PATH: ${{ vars.DBT_PROJECT_PATH || 'dbt_openfood' }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      SNOWFLAKE_KEY_PASSPHRASE_D: ${{ secrets.SNOWFLAKE_KEY_PASSPHRASE }}
+      CLEANUP_DATABASE: ${{ vars.CLEANUP_DATABASE }}
+      CLEANUP_MIN_AGE_DAYS: ${{ vars.CLEANUP_MIN_AGE_DAYS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      - name: drop stale developer schemas
+        run: bash scripts/cleanup_schemas.sh

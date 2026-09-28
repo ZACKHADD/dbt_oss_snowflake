@@ -1,0 +1,62 @@
+name: ppd-deploy
+
+on:
+  workflow_run:
+    workflows: ["rct-deploy.yml"]
+    types: [completed]
+    branches: ["release/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ppd-deploy-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ppd-snowflake:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'release/')) }}
+    runs-on: ubuntu-latest
+    environment: ppd
+    env:
+      DBT_PROJECT_PATH: ${{ vars.DBT_PROJECT_PATH || 'dbt_openfood' }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      SNOWFLAKE_KEY_PASSPHRASE_D: ${{ secrets.SNOWFLAKE_KEY_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+
+      - uses: ./.github/actions/setup
+
+      - name: deploy PPD Snowflake (UAT-validated Slim CI)
+        uses: ./.github/actions/slim-ci
+        with:
+          env: ppd
+          target: ppd
+          drop-removed: "true"
+
+  ppd-airflow:
+    needs: ppd-snowflake
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: ppd-approval
+    env:
+      MANIFEST_PUSH_TOKEN: ${{ secrets.MANIFEST_PUSH_TOKEN }}
+      ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+      ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+      ARGOCD_VERIFY_REQUIRED: ${{ vars.ARGOCD_VERIFY_REQUIRED }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+
+      - name: bump deploy/ppd ref
+        run: bash scripts/bump_manifest.sh "${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}" ppd
+
+      - name: verify Argo CD sync (airflow-ppd)
+        run: bash scripts/verify_argo_sync.sh airflow-ppd "${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}"

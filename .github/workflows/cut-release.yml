@@ -1,0 +1,38 @@
+name: cut-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. v1.7.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: create release branch snapshot of develop
+        run: |
+          SHA=$(git rev-parse HEAD)
+          git checkout -b "release/${{ inputs.version }}" "$SHA"
+          git push origin "release/${{ inputs.version }}"
+          echo "RELEASE_SHA=$SHA" >> "$GITHUB_ENV"
+
+      - name: create draft GitHub release (no tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.version }}" \
+            --target "release/${{ inputs.version }}" \
+            --title "${{ inputs.version }}" \
+            --generate-notes \
+            --draft

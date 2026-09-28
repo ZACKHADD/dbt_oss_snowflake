@@ -1,0 +1,101 @@
+name: dbt slim CI
+description: Fetch per-environment durable state from GitHub artifacts, run dbt Slim CI (with cold-start bootstrap and empty-selection guard), drop removed nodes, and publish state only on green.
+inputs:
+  env:
+    description: Environment label for the state artifact (dev/rct/ppd/prd/developer).
+    required: true
+  state-env:
+    description: Environment whose artifact state is the comparison baseline (defaults to env).
+    required: false
+    default: ""
+  target:
+    description: dbt target name.
+    required: true
+  project-path:
+    description: Path to the dbt project (defaults to DBT_PROJECT_PATH env var).
+    required: false
+    default: dbt_openfood
+  drop-removed:
+    description: Drop models removed from the graph in this run (skipped automatically for developer).
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: resolve project path
+      run: |
+        PROJ="${DBT_PROJECT_PATH:-${{ inputs.project-path }}}"
+        echo "PROJ=$PROJ" >> "$GITHUB_ENV"
+        SE="${{ inputs.state-env }}"
+        if [ -n "$SE" ]; then
+          echo "STATE_ENV=$SE" >> "$GITHUB_ENV"
+        else
+          echo "STATE_ENV=${{ inputs.env }}" >> "$GITHUB_ENV"
+        fi
+      shell: bash
+
+    - name: prepare state dir
+      run: |
+        rm -rf "$RUNNER_TEMP/dbt-state"
+        mkdir -p "$RUNNER_TEMP/dbt-state"
+      shell: bash
+
+    - name: fetch state
+      run: bash scripts/fetch_state.sh "$STATE_ENV" "$RUNNER_TEMP/dbt-state"
+      shell: bash
+
+    - name: mark state presence
+      run: |
+        if [ -f "$RUNNER_TEMP/dbt-state/manifest.json" ]; then
+          echo "HAS_STATE=true" >> "$GITHUB_ENV"
+          echo "state cache present"
+        else
+          echo "HAS_STATE=false" >> "$GITHUB_ENV"
+          echo "state cache absent"
+        fi
+      shell: bash
+
+    - name: dbt build (slim or bootstrap)
+      run: |
+        cd "$PROJ"
+        if [ "$HAS_STATE" = "false" ]; then
+          echo "BOOTSTRAP: no $STATE_ENV state, running full build"
+          uv run dbt build --target "${{ inputs.target }}" --no-partial-parse
+        else
+          uv run dbt ls --target "${{ inputs.target }}" --state "$RUNNER_TEMP/dbt-state" \
+            --select "state:modified+" --output name > "$RUNNER_TEMP/selected.txt"
+          N=$(wc -l < "$RUNNER_TEMP/selected.txt" | tr -d " ")
+          if [ "$N" -eq 0 ]; then
+            echo "NO-OP: no modified nodes vs $STATE_ENV state @ ${{ github.sha }}"
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          else
+            echo "SLIM-CI: $N modified node(s)"
+            uv run dbt build --target "${{ inputs.target }}" --no-partial-parse \
+              --select "state:modified+" --defer --state "$RUNNER_TEMP/dbt-state"
+          fi
+        fi
+      shell: bash
+
+    - name: drop removed nodes
+      if: inputs.drop-removed == 'true' && env.HAS_STATE == 'true' && env.SKIP != 'true' && inputs.env != 'developer'
+      run: |
+        cd "$PROJ"
+        python3 ../scripts/drop_removed.py --env "$STATE_ENV" --target "${{ inputs.target }}" --state "$RUNNER_TEMP/dbt-state" --project "$PROJ"
+      shell: bash
+
+    - name: publish state
+      if: env.SKIP != 'true'
+      run: |
+        cd "$PROJ"
+        cp target/manifest.json "$RUNNER_TEMP/dbt-state/manifest.json"
+        cp target/run_results.json "$RUNNER_TEMP/dbt-state/run_results.json" 2>/dev/null || true
+        echo "state staged for artifact upload: $STATE_ENV"
+      shell: bash
+
+    - name: upload state artifact
+      if: env.SKIP != 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dbt-state-${{ inputs.env }}-${{ github.run_id }}
+        path: ${{ runner.temp }}/dbt-state
+        if-no-files-found: error

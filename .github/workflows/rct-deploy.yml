@@ -1,0 +1,56 @@
+name: rct-deploy
+
+on:
+  push:
+    branches:
+      - "release/**"
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: rct-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rct-snowflake:
+    runs-on: ubuntu-latest
+    environment: rct
+    env:
+      DBT_PROJECT_PATH: ${{ vars.DBT_PROJECT_PATH || 'dbt_openfood' }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      SNOWFLAKE_KEY_PASSPHRASE_D: ${{ secrets.SNOWFLAKE_KEY_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup
+
+      - name: deploy RCT Snowflake (QA-validated Slim CI)
+        uses: ./.github/actions/slim-ci
+        with:
+          env: rct
+          target: rct
+          drop-removed: "true"
+
+  rct-airflow:
+    runs-on: ubuntu-latest
+    needs: rct-snowflake
+    environment: rct-approval
+    env:
+      MANIFEST_PUSH_TOKEN: ${{ secrets.MANIFEST_PUSH_TOKEN }}
+      ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+      ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+      ARGOCD_VERIFY_REQUIRED: ${{ vars.ARGOCD_VERIFY_REQUIRED }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: bump deploy/rct ref
+        run: bash scripts/bump_manifest.sh "${{ github.sha }}" rct
+
+      - name: verify Argo CD sync (airflow-rct)
+        run: bash scripts/verify_argo_sync.sh airflow-rct "${{ github.sha }}"
